@@ -1,0 +1,121 @@
+name: VK Notifier
+
+on:
+  schedule:
+    - cron: '*/6 * * * *'
+  workflow_dispatch:
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+
+    steps:
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install deps
+        run: pip install requests
+
+      - name: Run notifier
+        env:
+          VK_TOKEN: ${{ secrets.VK_TOKEN }}
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+          LAST_MESSAGE_ID: ${{ vars.LAST_MESSAGE_ID }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          python - <<'EOF'
+          import os
+          import datetime
+          import requests
+
+          VK_TOKEN = os.environ["VK_TOKEN"]
+          TG_BOT_TOKEN = os.environ["TG_BOT_TOKEN"]
+          TG_CHAT_ID = os.environ["TG_CHAT_ID"]
+          CHAT_IDS = [TG_CHAT_ID, "627612908"]
+          LAST_MESSAGE_ID = int(os.environ.get("LAST_MESSAGE_ID") or "0")
+          GH_TOKEN = os.environ["GH_TOKEN"]
+          GH_REPO = os.environ["GH_REPO"]
+
+          def vk_get_new_messages():
+              r = requests.get("https://api.vk.com/method/messages.getConversations", params={
+                  "access_token": VK_TOKEN,
+                  "v": "5.199",
+                  "count": 20,
+                  "filter": "unread",
+              })
+              data = r.json()
+              if "error" in data:
+                  print(f"VK Error: {data['error']}")
+                  return []
+              items = data.get("response", {}).get("items", [])
+              messages = []
+              for item in items:
+                  conv = item.get("conversation", {})
+                  last_msg = item.get("last_message", {})
+                  msg_id = last_msg.get("id", 0)
+                  if msg_id <= LAST_MESSAGE_ID:
+                      continue
+                  from_id = last_msg.get("from_id", 0)
+                  text = last_msg.get("text", "(без текста)")
+                  peer_id = conv.get("peer", {}).get("id", 0)
+                  ts = last_msg.get("date", 0)
+                  dt = datetime.datetime.fromtimestamp(ts).strftime("%d.%m.%Y %H:%M")
+                  if from_id > 0:
+                      user = requests.get("https://api.vk.com/method/users.get", params={
+                          "access_token": VK_TOKEN,
+                          "v": "5.199",
+                          "user_ids": from_id,
+                      }).json()
+                      u = user.get("response", [{}])[0]
+                      sender = f"{u.get('first_name', '')} {u.get('last_name', '')}".strip()
+                  else:
+                      sender = f"Группа/бот (id{abs(from_id)})"
+                  messages.append({
+                      "id": msg_id,
+                      "sender": sender,
+                      "text": text,
+                      "peer_id": peer_id,
+                      "time": dt,
+                  })
+              return messages
+
+          def send_telegram(text):
+              for cid in CHAT_IDS:
+                  requests.post(
+                      f"https://api.telegram.org/bot{TG_BOT_TOKEN}/sendMessage",
+                      json={"chat_id": cid, "text": text, "parse_mode": "HTML"},
+                  )
+
+          def save_last_id(new_id):
+              requests.patch(
+                  f"https://api.github.com/repos/{GH_REPO}/actions/variables/LAST_MESSAGE_ID",
+                  headers={
+                      "Authorization": f"Bearer {GH_TOKEN}",
+                      "Accept": "application/vnd.github+json",
+                  },
+                  json={"name": "LAST_MESSAGE_ID", "value": str(new_id)},
+              )
+
+          messages = vk_get_new_messages()
+          if not messages:
+              print("Новых сообщений нет")
+          else:
+              max_id = LAST_MESSAGE_ID
+              for msg in messages:
+                  text = (
+                      f"📩 Новое сообщение ВКонтакте\n"
+                      f"👤 От: {msg['sender']}\n"
+                      f"🕐 {msg['time']}"
+                  )
+                  send_telegram(text)
+                  max_id = max(max_id, msg["id"])
+              if max_id > LAST_MESSAGE_ID:
+                  save_last_id(max_id)
+                  print(f"Отправлено {len(messages)} уведомлений, новый last_id={max_id}")
+          EOF
