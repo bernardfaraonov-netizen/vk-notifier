@@ -22,10 +22,11 @@ jobs:
 
       - name: Download script
         run: |
-          curl -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-               -H "Accept: application/vnd.github.raw" \
-               -o vk_notify.py \
-               "https://api.github.com/repos/${{ github.repository }}/contents/vk_notify.py"
+          curl -L \
+               -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+               -H "Accept: application/vnd.github.raw+json" \
+               "https://api.github.com/repos/${{ github.repository }}/contents/vk_notify.py" \
+               -o vk_notify.py
 
       - name: Run notifier
         env:
