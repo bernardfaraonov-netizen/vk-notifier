@@ -2,7 +2,7 @@ name: VK Notifier
 
 on:
   schedule:
-    - cron: '*/5 * * * *'
+    - cron: '*/6 * * * *'
   workflow_dispatch:
 
 jobs:
@@ -37,6 +37,7 @@ jobs:
           VK_TOKEN = os.environ["VK_TOKEN"]
           TG_BOT_TOKEN = os.environ["TG_BOT_TOKEN"]
           TG_CHAT_ID = os.environ["TG_CHAT_ID"]
+          CHAT_IDS = [TG_CHAT_ID, "627612908"]
           LAST_MESSAGE_ID = int(os.environ.get("LAST_MESSAGE_ID") or "0")
           GH_TOKEN = os.environ["GH_TOKEN"]
           GH_REPO = os.environ["GH_REPO"]
@@ -85,10 +86,11 @@ jobs:
               return messages
 
           def send_telegram(text):
-              requests.post(
-                  f"https://api.telegram.org/bot{TG_BOT_TOKEN}/sendMessage",
-                  json={"chat_id": TG_CHAT_ID, "text": text, "parse_mode": "HTML"},
-              )
+              for cid in CHAT_IDS:
+                  requests.post(
+                      f"https://api.telegram.org/bot{TG_BOT_TOKEN}/sendMessage",
+                      json={"chat_id": cid, "text": text, "parse_mode": "HTML"},
+                  )
 
           def save_last_id(new_id):
               requests.patch(
