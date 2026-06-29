@@ -31,6 +31,7 @@ jobs:
         run: |
           python - <<'EOF'
           import os
+          import datetime
           import requests
 
           VK_TOKEN = os.environ["VK_TOKEN"]
@@ -62,6 +63,8 @@ jobs:
                   from_id = last_msg.get("from_id", 0)
                   text = last_msg.get("text", "(без текста)")
                   peer_id = conv.get("peer", {}).get("id", 0)
+                  ts = last_msg.get("date", 0)
+                  dt = datetime.datetime.fromtimestamp(ts).strftime("%d.%m.%Y %H:%M")
                   if from_id > 0:
                       user = requests.get("https://api.vk.com/method/users.get", params={
                           "access_token": VK_TOKEN,
@@ -77,6 +80,7 @@ jobs:
                       "sender": sender,
                       "text": text,
                       "peer_id": peer_id,
+                      "time": dt,
                   })
               return messages
 
@@ -103,10 +107,9 @@ jobs:
               max_id = LAST_MESSAGE_ID
               for msg in messages:
                   text = (
-                      f"📩 <b>Новое сообщение ВКонтакте</b>\n"
+                      f"📩 Новое сообщение ВКонтакте\n"
                       f"👤 От: {msg['sender']}\n"
-                      f"💬 {msg['text']}\n"
-                      f"🔗 vk.com/im?sel={msg['peer_id']}"
+                      f"🕐 {msg['time']}"
                   )
                   send_telegram(text)
                   max_id = max(max_id, msg["id"])
